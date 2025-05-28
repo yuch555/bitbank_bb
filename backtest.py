@@ -1,8 +1,11 @@
+import os
+import json
 import requests
 import pandas as pd
 import datetime
 import matplotlib.pyplot as plt
 import ta
+import calendar
 
 def fetch_bitbank_ohlcv(pair='btc_jpy', candle_type='30min', days=90):
     klines = []
@@ -23,8 +26,23 @@ def fetch_bitbank_ohlcv(pair='btc_jpy', candle_type='30min', days=90):
     df = df.sort_values('start_at').reset_index(drop=True)
     return df
 
-# データ取得（30分足、直近30日分）
-ohlcv_df = fetch_bitbank_ohlcv(candle_type='30min', days=90)
+def load_or_fetch_ohlcv_json(pair='btc_jpy', candle_type='30min', days=365, cache_file='ohlcv_cache.json'):
+    # キャッシュファイルがあれば読み込み
+    if os.path.exists(cache_file):
+        with open(cache_file, 'r') as f:
+            klines = json.load(f)
+        df = pd.DataFrame(klines)
+        print(f"Loaded OHLCV from {cache_file}")
+        return df
+
+    # なければAPIから取得して保存
+    df = fetch_bitbank_ohlcv(pair=pair, candle_type=candle_type, days=days)
+    df.to_json(cache_file, orient='records')
+    print(f"Fetched and saved OHLCV to {cache_file}")
+    return df
+
+# 1年分の30分足データをキャッシュ利用で取得
+ohlcv_df = load_or_fetch_ohlcv_json(pair='btc_jpy', candle_type='30min', days=365, cache_file='ohlcv_btc_30min_1y.json')
 
 # ボリンジャーバンド計算（30分足に最適化、window=20はそのまま）
 window = 20
@@ -104,3 +122,18 @@ def backtest_bb(predicted_df, initial_jpy=1000000, fee_rate=0.0012):
 
 print("\n【ボリンジャーバンド逆張り戦略】")
 pl_df = backtest_bb(ohlcv_df)
+
+# 月ごとに区切る
+ohlcv_df['datetime'] = pd.to_datetime(ohlcv_df['start_at'], unit='s')
+ohlcv_df['year_month'] = ohlcv_df['datetime'].dt.to_period('M')
+
+results = []
+for ym, group in ohlcv_df.groupby('year_month'):
+    print(f"\n=== {ym} のバックテスト結果 ===")
+    pl_df = backtest_bb(group)
+    results.append((str(ym), pl_df['jpy_amount'].iloc[-1]))
+
+# 月ごとの最終残高を表示
+print("\n【月ごとの最終残高】")
+for ym, last_jpy in results:
+    print(f"{ym}: {last_jpy:.2f} 円")
