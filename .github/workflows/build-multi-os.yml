@@ -20,6 +20,12 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: Install build tools on macOS
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install cython
+        xcode-select --install || true
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
