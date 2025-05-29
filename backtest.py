@@ -59,15 +59,29 @@ ohlcv_df['adx'] = ta.trend.ADXIndicator(
     window=14
 ).adx()
 
-# シグナル生成（ADXが閾値未満＝レンジ相場のみ逆張り）
+# RSI計算（window=14が一般的）
+ohlcv_df['rsi'] = ta.momentum.RSIIndicator(ohlcv_df['close'], window=14).rsi()
+
+# シグナル生成（ADXが閾値未満＝レンジ相場のみ逆張り、RSIも条件に追加）
 adx_thr = 25  # 35以上はトレンド、35未満はレンジ
+rsi_buy = 18  # RSIが18以下で買い
+rsi_sell = 70  # RSIが70以上で売り
+
 ohlcv_df['signal'] = 0
+
+# 買い：BB下抜け＆ADXレンジ＆RSI18以下
 ohlcv_df.loc[
-    (ohlcv_df['close'] < ohlcv_df['bb_low']) & (ohlcv_df['adx'] < adx_thr),
+    (ohlcv_df['close'] < ohlcv_df['bb_low']) &
+    (ohlcv_df['adx'] < adx_thr) |
+    (ohlcv_df['rsi'] <= rsi_buy),
     'signal'
-] = 1   # 買い
+] = 1
+
+# 売り：BB上抜け＆ADXレンジ＆RSI70以上
 ohlcv_df.loc[
-    (ohlcv_df['close'] > ohlcv_df['bb_high']) & (ohlcv_df['adx'] < adx_thr),
+    (ohlcv_df['close'] > ohlcv_df['bb_high']) &
+    (ohlcv_df['adx'] < adx_thr) |
+    (ohlcv_df['rsi'] >= rsi_sell),
     'signal'
 ] = -1  # 売り
 
@@ -137,3 +151,14 @@ for ym, group in ohlcv_df.groupby('year_month'):
 print("\n【月ごとの最終残高】")
 for ym, last_jpy in results:
     print(f"{ym}: {last_jpy:.2f} 円")
+
+# 年ごとの最終残高を集計・表示
+ohlcv_df['year'] = ohlcv_df['datetime'].dt.year
+year_results = []
+for year, group in ohlcv_df.groupby('year'):
+    pl_df = backtest_bb(group)
+    year_results.append((str(year), pl_df['jpy_amount'].iloc[-1]))
+
+print("\n【年ごとの最終残高】")
+for year, last_jpy in year_results:
+    print(f"{year}: {last_jpy:.2f} 円")
